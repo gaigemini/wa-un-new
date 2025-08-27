@@ -41,6 +41,7 @@ export async function useSession(sessionId: string): Promise<{
 				return null;
 			}
 
+			console.log("Session data read successfully", { result, sessionId });
 			return JSON.parse(result.data, BufferJSON.reviver);
 		} catch (e) {
 			if (e instanceof PrismaClientKnownRequestError && e.code === "P2025") {

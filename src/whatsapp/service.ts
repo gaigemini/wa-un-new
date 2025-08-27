@@ -28,6 +28,10 @@ type createSessionOptions = {
 	socketConfig?: SocketConfig;
 };
 
+type BaileysVersionResponse = {
+    version: [number, number, number];
+};
+
 class WhatsappService {
 	private static sessions = new Map<string, Session>();
 	private static retries = new Map<string, number>();
@@ -43,6 +47,7 @@ class WhatsappService {
 			where: { id: { startsWith: env.SESSION_CONFIG_ID } },
 		});
 		for (const { sessionId, data } of storedSessions) {
+			console.log("Restoring session", data, sessionId);
 			const { readIncomingMessages, ...socketConfig } = JSON.parse(data);
 			WhatsappService.createSession({ sessionId, readIncomingMessages, socketConfig });
 		}
@@ -69,6 +74,7 @@ class WhatsappService {
 
 	static async createSession(options: createSessionOptions) {
 		const { sessionId, res, SSE = false, readIncomingMessages = false, socketConfig } = options;
+		// console.log("Creating session", { sessionId, readIncomingMessages, socketConfig });
 		const configID = `${env.SESSION_CONFIG_ID}-${sessionId}`;
 		let connectionState: Partial<ConnectionState> = { connection: "close" };
 
@@ -137,7 +143,7 @@ class WhatsappService {
 							sessionId,
 							undefined,
 							"error",
-							`Unable to generate QR code: ${e.message}`,
+							`Unable to generate QR code: ${e}`,
 						);
 						res.status(500).json({ error: "Unable to generate QR" });
 					}
@@ -159,7 +165,7 @@ class WhatsappService {
 						sessionId,
 						undefined,
 						"error",
-						`Unable to generate QR code: ${e.message}`,
+						`Unable to generate QR code: ${e}`,
 					);
 				}
 			}
@@ -183,20 +189,45 @@ class WhatsappService {
 			res.write(`data: ${JSON.stringify(data)}\n\n`);
 		};
 
+		const fetchBaileysVersion = async (): Promise<[number, number, number]> => {
+    try {
+        const response = await fetch(
+            "https://raw.githubusercontent.com/WhiskeySockets/Baileys/master/src/Defaults/baileys-version.json",
+            // { cache: 'no-cache' }
+        );
+
+        if (response.ok) {
+            // --- THIS IS THE FIX ---
+            // Tell .json() what type of data to expect
+            const data = await response.json() as BaileysVersionResponse;
+            return data.version;
+        }
+
+        logger.warn("Fetch failed, using hardcoded Baileys version.");
+        return [2, 3000, 1023223821];
+
+    } catch (error) {
+        logger.error(error, "Failed to fetch Baileys version");
+        return [2, 3000, 0];
+    }
+}
+
+		const versionData = { version: await fetchBaileysVersion() };
+
 		const handleConnectionUpdate = SSE
 			? handleSSEConnectionUpdate
 			: handleNormalConnectionUpdate;
 		const { state, saveCreds } = await useSession(sessionId);
 		const socket = makeWASocket({
 			printQRInTerminal: true,
-			browser: [env.BOT_NAME || "Whatsapp Bot", "Chrome", "3.0"],
+			browser: [env.BOT_NAME || "Ubuntu", "Chrome", "3.0"],
 			generateHighQualityLinkPreview: true,
 			...socketConfig,
 			auth: {
 				creds: state.creds,
 				keys: makeCacheableSignalKeyStore(state.keys, logger),
 			},
-			version: [2, 3000, 1015901307],
+			version: versionData.version,
 			logger,
 			shouldIgnoreJid: (jid) => isJidBroadcast(jid),
 			getMessage: async (key) => {
@@ -219,7 +250,8 @@ class WhatsappService {
 		socket.ev.on("creds.update", saveCreds);
 		socket.ev.on("connection.update", (update) => {
 			connectionState = update;
-			const { connection } = update;
+			const { connection, lastDisconnect } = update;
+			logger.info({ update }, "Session status");
 
 			if (connection === "open") {
 				WhatsappService.updateWaConnection(
@@ -229,7 +261,12 @@ class WhatsappService {
 				WhatsappService.retries.delete(sessionId);
 				WhatsappService.SSEQRGenerations.delete(sessionId);
 			}
-			if (connection === "close") handleConnectionClose();
+			if (
+				connection === "close" &&
+				(lastDisconnect?.error as Boom)?.output?.statusCode ===
+					DisconnectReason.restartRequired
+			)
+				handleConnectionClose();
 			if (connection === "connecting")
 				WhatsappService.updateWaConnection(sessionId, WAStatus.PullingWAData);
 			handleConnectionUpdate();
@@ -258,7 +295,7 @@ class WhatsappService {
 
 	static getSessionStatus(session: Session) {
 		const state = ["CONNECTING", "CONNECTED", "DISCONNECTING", "DISCONNECTED"];
-		let status = state[(session.ws as WebSocketType).readyState];
+		let status = state[(session.ws as unknown as WebSocketType).readyState];
 		status = session.user ? "AUTHENTICATED" : status;
 		return session.waStatus !== WAStatus.Unknown ? session.waStatus : status.toLowerCase();
 	}
@@ -286,7 +323,7 @@ class WhatsappService {
 		try {
 			if (type === "number") {
 				const [result] = await session.onWhatsApp(jid);
-				if(result?.exists) {
+				if (result?.exists) {
 					return result.jid;
 				} else {
 					return null;
@@ -294,7 +331,7 @@ class WhatsappService {
 			}
 
 			const groupMeta = await session.groupMetadata(jid);
-			if(groupMeta.id) {
+			if (groupMeta.id) {
 				return groupMeta.id;
 			} else {
 				return null;

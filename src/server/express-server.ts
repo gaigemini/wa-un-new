@@ -15,6 +15,7 @@ export class ExpressServer {
 	private setupMiddleware() {
 		this.app.use(cors());
 		this.app.use(express.json());
+		console.log("Express server initialized with middleware");
 	}
 
 	private setupRoutes() {
