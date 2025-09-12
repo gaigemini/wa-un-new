@@ -1,5 +1,5 @@
-import env from "@/config/env";
-import pino, { type Logger } from "pino";
+import env from "@/config/env.js";
+import { pino, type Logger } from "pino";
 
 export const logger: Logger = pino({
 	timestamp: () => `,"time":"${new Date().toJSON()}"`,

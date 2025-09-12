@@ -4,15 +4,15 @@ import makeWASocket, {
 	makeCacheableSignalKeyStore,
 } from "baileys";
 import type { ConnectionState, SocketConfig, WASocket, proto } from "baileys";
-import { Store, useSession } from "./store";
-import { prisma } from "@/config/database";
-import { logger, delay, emitEvent } from "@/utils";
-import { WAStatus } from "@/types";
+import { Store, useSession } from "./store/index.js";
+import { prisma } from "@/config/database.js";
+import { logger, delay, emitEvent } from "@/utils/index.js";
+import { WAStatus } from "@/types/index.js";
 import type { Boom } from "@hapi/boom";
 import type { Response } from "express";
 import { toDataURL } from "qrcode";
 import type { WebSocket as WebSocketType } from "ws";
-import env from "@/config/env";
+import env from "@/config/env.js";
 
 export type Session = WASocket & {
 	destroy: () => Promise<void>;
@@ -80,8 +80,10 @@ class WhatsappService {
 
 		const destroy = async (logout = true) => {
 			try {
+				if (logout) {
+					await socket.logout();
+				}
 				await Promise.all([
-					logout && socket.logout(),
 					prisma.chat.deleteMany({ where: { sessionId } }),
 					prisma.contact.deleteMany({ where: { sessionId } }),
 					prisma.message.deleteMany({ where: { sessionId } }),
@@ -97,6 +99,25 @@ class WhatsappService {
 			}
 		};
 
+		// const destroy = async (logout = true) => {
+		// 	try {
+		// 		await Promise.all([
+		// 			logout && socket.logout(),
+		// 			prisma.chat.deleteMany({ where: { sessionId } }),
+		// 			prisma.contact.deleteMany({ where: { sessionId } }),
+		// 			prisma.message.deleteMany({ where: { sessionId } }),
+		// 			prisma.groupMetadata.deleteMany({ where: { sessionId } }),
+		// 			prisma.session.deleteMany({ where: { sessionId } }),
+		// 		]);
+		// 		logger.info({ session: sessionId }, "Session destroyed");
+		// 	} catch (e) {
+		// 		logger.error(e, "An error occurred during session destroy");
+		// 	} finally {
+		// 		WhatsappService.sessions.delete(sessionId);
+		// 		WhatsappService.updateWaConnection(sessionId, WAStatus.Disconected);
+		// 	}
+		// };
+
 		const handleConnectionClose = () => {
 			const code = (connectionState.lastDisconnect?.error as Boom)?.output?.statusCode;
 			const restartRequired = code === DisconnectReason.restartRequired;
@@ -111,7 +132,7 @@ class WhatsappService {
 						res.status(500).json({ error: "Unable to create session" });
 					res.end();
 				}
-				destroy(doNotReconnect);
+				destroy(code !== DisconnectReason.loggedOut); // Pass false if it's a real logout
 				return;
 			}
 
@@ -189,28 +210,25 @@ class WhatsappService {
 			res.write(`data: ${JSON.stringify(data)}\n\n`);
 		};
 
-		const fetchBaileysVersion = async (): Promise<[number, number, number]> => {
-    try {
-        const response = await fetch(
-            "https://raw.githubusercontent.com/WhiskeySockets/Baileys/master/src/Defaults/baileys-version.json",
-            // { cache: 'no-cache' }
-        );
+		const fetchBaileysVersion = async (retries = 3): Promise<[number, number, number]> => {
+			for (let i = 1; i <= retries; i++) {
+				try {
+					const response = await fetch(
+						"https://raw.githubusercontent.com/WhiskeySockets/Baileys/master/src/Defaults/baileys-version.json"
+					);
 
-        if (response.ok) {
-            // --- THIS IS THE FIX ---
-            // Tell .json() what type of data to expect
-            const data = await response.json() as BaileysVersionResponse;
-            return data.version;
-        }
-
-        logger.warn("Fetch failed, using hardcoded Baileys version.");
-        return [2, 3000, 1023223821];
-
-    } catch (error) {
-        logger.error(error, "Failed to fetch Baileys version");
-        return [2, 3000, 0];
-    }
-}
+					if (response.ok) {
+						const data = (await response.json()) as BaileysVersionResponse;
+						return data.version;
+					}
+					logger.warn(`Fetch failed (attempt ${i}/${retries}), using hardcoded Baileys version.`);
+				} catch (error) {
+					logger.error(error, `Failed to fetch Baileys version (attempt ${i}/${retries})`);
+				}
+			}
+			logger.warn(`All fetch attempts failed, using hardcoded Baileys version.`);
+			return [2, 3000, 1023223821]; // Keep a fallback
+		};
 
 		const versionData = { version: await fetchBaileysVersion() };
 

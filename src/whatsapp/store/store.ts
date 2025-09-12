@@ -1,5 +1,5 @@
 import type { BaileysEventEmitter } from "baileys";
-import * as handlers from "./handlers";
+import * as handlers from "./handlers/index.js";
 
 export class Store {
 	private readonly chatHandler;

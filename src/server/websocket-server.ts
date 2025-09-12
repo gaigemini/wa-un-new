@@ -1,5 +1,5 @@
-import { type EventsType } from "@/types/websocket";
-import env from "@/config/env";
+import { type EventsType } from "@/types/websocket.js";
+import env from "@/config/env.js";
 import { Server as SocketIOServer } from "socket.io";
 import type http from "http";
 

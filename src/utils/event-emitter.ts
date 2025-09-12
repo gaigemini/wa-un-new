@@ -1,6 +1,6 @@
-import type { EventsType } from "@/types/websocket";
-import type { SocketServer } from "../server/websocket-server";
-import env from "@/config/env";
+import type { EventsType } from "@/types/websocket.js";
+import type { SocketServer } from "../server/websocket-server.js";
+import env from "@/config/env.js";
 import axios from "axios";
 
 let socketServer: SocketServer | null = null;

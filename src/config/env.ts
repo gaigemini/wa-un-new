@@ -1,4 +1,4 @@
-import { LogLevel } from "@/types";
+import { LogLevel } from "@/types/index.js";
 import { config } from "dotenv";
 import { z } from "zod";
 

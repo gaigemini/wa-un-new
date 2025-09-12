@@ -1,4 +1,4 @@
-import WhatsappService from "@/whatsapp/service";
+import WhatsappService from "@/whatsapp/service.js";
 import type { RequestHandler } from "express";
 
 export const list: RequestHandler = (req, res) => {

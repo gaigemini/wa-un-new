@@ -1,12 +1,12 @@
 import type { proto, WAGenericMediaMessage, WAMessage } from "baileys";
 import { downloadMediaMessage } from "baileys";
-import { serializePrisma, delay as delayMs, logger, emitEvent } from "@/utils";
+import { serializePrisma, delay as delayMs, logger, emitEvent } from "@/utils/index.js";
 import type { RequestHandler } from "express";
 import type { Message } from "@prisma/client";
-import { prisma } from "@/config/database";
-import WhatsappService from "@/whatsapp/service";
-import { updatePresence } from "./misc";
-import { WAPresence } from "@/types";
+import { prisma } from "@/config/database.js";
+import WhatsappService from "@/whatsapp/service.js";
+import { updatePresence } from "./misc.js";
+import { WAPresence } from "@/types/index.js";
 
 export const list: RequestHandler = async (req, res) => {
 	try {

@@ -2,11 +2,15 @@
 	"name": "baileys-api",
 	"version": "2.0.0",
 	"description": "Simple WhatsApp REST API with multiple device support",
+	"type": "module",
 	"main": "dist/main.js",
+	"imports": {
+		"@/*": "./dist/*"
+	},
 	"scripts": {
-		"build": "tsc --project tsconfig.json && tscpaths -p tsconfig.json -s ./src",
-		"start": "node -r tsconfig-paths/register -r ts-node ./dist/main.js",
-		"dev": "nodemon src/main.ts",
+		"build": "tsc --project tsconfig.json && tsc-alias",
+		"start": "node dist/main.js",
+		"dev": "nodemon --watch src --ext ts --exec \"npm run build && npm run start\"",
 		"lint": "eslint . --ext .ts",
 		"format": "prettier . --write",
 		"postinstall": "prisma generate",
@@ -78,8 +82,7 @@
 		"prettier": "^3.2.5",
 		"prettier-plugin-organize-imports": "^3.2.4",
 		"ts-node": "^10.9.2",
-		"tsconfig-paths": "^4.2.0",
-		"tscpaths": "^0.0.9",
+		"tsc-alias": "^1.8.16",
 		"typescript": "^5.3.3"
 	},
 	"engines": {

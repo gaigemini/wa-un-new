@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { toNumber } from "baileys";
 import Long from "long";
-import type { MakeTransformedPrisma, MakeSerializedPrisma } from "@/types/prisma";
+import type { MakeTransformedPrisma, MakeSerializedPrisma } from "@/types/prisma.js";
 
 /** Transform object props value into Prisma-supported types */
 export function transformPrisma<T extends Record<string, any>>(

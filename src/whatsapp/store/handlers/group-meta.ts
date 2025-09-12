@@ -1,9 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type { BaileysEventEmitter, GroupMetadata } from "baileys";
-import type { BaileysEventHandler, MakeTransformedPrisma } from "@/types";
-import { transformPrisma, logger, emitEvent } from "@/utils";
-import { prisma } from "@/config/database";
-import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
+import type { BaileysEventHandler, MakeTransformedPrisma } from "@/types/index.js";
+import { transformPrisma, logger, emitEvent } from "@/utils/index.js";
+import { prisma } from "@/config/database.js";
+import PrismaClient from "@prisma/client";
+const { Prisma } = PrismaClient;
+const { PrismaClientKnownRequestError } = Prisma;
+// import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
 
 export default function groupMetadataHandler(sessionId: string, event: BaileysEventEmitter) {
 	const model = prisma.groupMetadata;

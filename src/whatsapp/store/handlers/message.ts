@@ -1,8 +1,8 @@
 import type { BaileysEventEmitter, MessageUserReceipt, proto, WAMessageKey } from "baileys";
 import { jidNormalizedUser, toNumber } from "baileys";
-import type { BaileysEventHandler, MakeTransformedPrisma } from "@/types";
-import { transformPrisma, logger, emitEvent } from "@/utils";
-import { prisma } from "@/config/database";
+import type { BaileysEventHandler, MakeTransformedPrisma } from "@/types/index.js";
+import { transformPrisma, logger, emitEvent } from "@/utils/index.js";
+import { prisma } from "@/config/database.js";
 import type { Message } from "@prisma/client";
 
 const getKeyAuthor = (key: WAMessageKey | undefined | null) =>

@@ -1,7 +1,7 @@
 import type { RequestHandler } from "express";
-import { logger } from "@/utils";
-import WhatsappService, { type Session } from "@/whatsapp/service";
-import { WAPresence } from "@/types";
+import { logger } from "@/utils/index.js";
+import WhatsappService, { type Session } from "@/whatsapp/service.js";
+import { WAPresence } from "@/types/index.js";
 
 export const makePhotoURLHandler =
 	(type: "number" | "group" = "number"): RequestHandler =>

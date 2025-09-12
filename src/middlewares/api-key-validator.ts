@@ -1,4 +1,4 @@
-import env from "@/config/env";
+import env from "@/config/env.js";
 import type { NextFunction, Request, Response } from "express";
 
 export function apiKeyValidator(req: Request, res: Response, next: NextFunction) {

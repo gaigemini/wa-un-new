@@ -1,0 +1,12 @@
+# Ignore development and local environment files
+.git
+.env
+.gitignore
+.dockerignore
+nodemon.json
+README.md
+node_modules
+
+# Ignore Docker-specific files
+Dockerfile
+docker-compose.yml

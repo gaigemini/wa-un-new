@@ -1,9 +1,9 @@
 import { Router } from "express";
-import { session } from "@/controllers";
-import sessionValidator from "@/middlewares/session-validator";
-import requestValidator from "@/middlewares/request-validator";
+import { session } from "@/controllers/index.js";
+import sessionValidator from "@/middlewares/session-validator.js";
+import requestValidator from "@/middlewares/request-validator.js";
 import { body } from "express-validator";
-import { apiKeyValidator, apiKeyValidatorParam } from "@/middlewares/api-key-validator";
+import { apiKeyValidator, apiKeyValidatorParam } from "@/middlewares/api-key-validator.js";
 
 const router = Router();
 router.get("/", apiKeyValidator, session.list);

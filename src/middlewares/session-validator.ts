@@ -1,4 +1,4 @@
-import WhatsappService from "@/whatsapp/service";
+import WhatsappService from "@/whatsapp/service.js";
 import type { Request, Response, NextFunction } from "express";
 
 export default function sessionValidator(req: Request, res: Response, next: NextFunction) {

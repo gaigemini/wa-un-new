@@ -1,9 +1,9 @@
 import http from "http";
-import { ExpressServer } from "./express-server";
-import env from "@/config/env";
-import { SocketServer } from "./websocket-server";
-import WhatsappService from "@/whatsapp/service";
-import { initializeSocketEmitter } from "@/utils";
+import { ExpressServer } from "./express-server.js";
+import env from "@/config/env.js";
+import { SocketServer } from "./websocket-server.js";
+import WhatsappService from "@/whatsapp/service.js";
+import { initializeSocketEmitter } from "@/utils/index.js";
 
 export class Server {
 	private httpServer: ExpressServer;
