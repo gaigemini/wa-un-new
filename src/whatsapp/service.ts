@@ -197,6 +197,13 @@ class WhatsappService {
 				res.writableEnded ||
 				(qr && currentGenerations >= env.SSE_MAX_QR_GENERATION)
 			) {
+				logger.info({
+					res: !!res,
+					writableEnded: res?.writableEnded,
+					qr: !!qr,
+					currentGenerations,
+					maxGenerations: env.SSE_MAX_QR_GENERATION
+				}, "Destroying session in handleSSEConnectionUpdate");
 				res && !res.writableEnded && res.end();
 				destroy();
 				return;
