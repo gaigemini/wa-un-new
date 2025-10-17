@@ -15,7 +15,7 @@ import type { WebSocket as WebSocketType } from "ws";
 import env from "@/config/env.js";
 
 export type Session = WASocket & {
-	destroy: () => Promise<void>;
+	destroy: (logout?: boolean) => Promise<void>;
 	store: Store;
 	waStatus?: WAStatus;
 };
@@ -83,6 +83,9 @@ class WhatsappService {
 				if (logout) {
 					await socket.logout();
 				}
+			} catch (e) {
+				logger.error(e, "An error occurred during session logout");
+			} finally {
 				await Promise.all([
 					prisma.chat.deleteMany({ where: { sessionId } }),
 					prisma.contact.deleteMany({ where: { sessionId } }),
@@ -91,9 +94,6 @@ class WhatsappService {
 					prisma.session.deleteMany({ where: { sessionId } }),
 				]);
 				logger.info({ session: sessionId }, "Session destroyed");
-			} catch (e) {
-				logger.error(e, "An error occurred during session destroy");
-			} finally {
 				WhatsappService.sessions.delete(sessionId);
 				WhatsappService.updateWaConnection(sessionId, WAStatus.Disconected);
 			}
