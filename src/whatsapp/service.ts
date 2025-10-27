@@ -29,13 +29,14 @@ type createSessionOptions = {
 };
 
 type BaileysVersionResponse = {
-    version: [number, number, number];
+	version: [number, number, number];
 };
 
 class WhatsappService {
 	private static sessions = new Map<string, Session>();
 	private static retries = new Map<string, number>();
 	private static SSEQRGenerations = new Map<string, number>();
+	private static presenceIntervals = new Map<string, NodeJS.Timeout>();
 
 	constructor() {
 		this.init();
@@ -72,20 +73,51 @@ class WhatsappService {
 		return false;
 	}
 
+	private static async fetchBaileysVersion(
+		retries = 3,
+	): Promise<[number, number, number]> {
+		for (let i = 1; i <= retries; i++) {
+			try {
+				const response = await fetch(
+					"https://raw.githubusercontent.com/WhiskeySockets/Baileys/master/src/Defaults/baileys-version.json",
+				);
+
+				if (response.ok) {
+					const data = (await response.json()) as BaileysVersionResponse;
+					return data.version;
+				}
+				logger.warn(`Fetch failed (attempt ${i}/${retries}), using hardcoded Baileys version.`);
+			} catch (error) {
+				logger.error(error, `Failed to fetch Baileys version (attempt ${i}/${retries})`);
+			}
+		}
+		logger.warn(`All fetch attempts failed, using hardcoded Baileys version.`);
+		return [2, 3000, 1023223821];
+	}
+
 	static async createSession(options: createSessionOptions) {
 		const { sessionId, res, SSE = false, readIncomingMessages = false, socketConfig } = options;
-		// console.log("Creating session", { sessionId, readIncomingMessages, socketConfig });
 		const configID = `${env.SESSION_CONFIG_ID}-${sessionId}`;
 		let connectionState: Partial<ConnectionState> = { connection: "close" };
 
 		const destroy = async (logout = true) => {
 			try {
 				if (logout) {
-					await socket.logout();
+					const session = WhatsappService.sessions.get(sessionId);
+					if (session) {
+						await session.logout();
+					}
 				}
 			} catch (e) {
 				logger.error(e, "An error occurred during session logout");
 			} finally {
+				// Clear presence interval
+				const presenceInterval = WhatsappService.presenceIntervals.get(sessionId);
+				if (presenceInterval) {
+					clearInterval(presenceInterval);
+					WhatsappService.presenceIntervals.delete(sessionId);
+				}
+
 				await Promise.all([
 					prisma.chat.deleteMany({ where: { sessionId } }),
 					prisma.contact.deleteMany({ where: { sessionId } }),
@@ -99,25 +131,6 @@ class WhatsappService {
 			}
 		};
 
-		// const destroy = async (logout = true) => {
-		// 	try {
-		// 		await Promise.all([
-		// 			logout && socket.logout(),
-		// 			prisma.chat.deleteMany({ where: { sessionId } }),
-		// 			prisma.contact.deleteMany({ where: { sessionId } }),
-		// 			prisma.message.deleteMany({ where: { sessionId } }),
-		// 			prisma.groupMetadata.deleteMany({ where: { sessionId } }),
-		// 			prisma.session.deleteMany({ where: { sessionId } }),
-		// 		]);
-		// 		logger.info({ session: sessionId }, "Session destroyed");
-		// 	} catch (e) {
-		// 		logger.error(e, "An error occurred during session destroy");
-		// 	} finally {
-		// 		WhatsappService.sessions.delete(sessionId);
-		// 		WhatsappService.updateWaConnection(sessionId, WAStatus.Disconected);
-		// 	}
-		// };
-
 		const handleConnectionClose = () => {
 			const code = (connectionState.lastDisconnect?.error as Boom)?.output?.statusCode;
 			const restartRequired = code === DisconnectReason.restartRequired;
@@ -125,26 +138,44 @@ class WhatsappService {
 
 			WhatsappService.updateWaConnection(sessionId, WAStatus.Disconected);
 
-			if (code === DisconnectReason.loggedOut || doNotReconnect) {
+			logger.warn(
+				{ code, sessionId, restartRequired, doNotReconnect },
+				"Connection closed",
+			);
+
+			// Only logout on explicit logout, not on timeout/idle
+			if (code === DisconnectReason.loggedOut) {
 				if (res) {
-					!SSE &&
-						!res.headersSent &&
-						res.status(500).json({ error: "Unable to create session" });
+					!SSE && !res.headersSent && res.status(500).json({ error: "Unable to create session" });
 					res.end();
 				}
-				destroy(code !== DisconnectReason.loggedOut); // Pass false if it's a real logout
+				destroy(true);
+				return;
+			}
+
+			// Don't reconnect if max retries reached
+			if (doNotReconnect) {
+				if (res) {
+					!SSE && !res.headersSent && res.status(500).json({ error: "Unable to create session" });
+					res.end();
+				}
+				destroy(false);
 				return;
 			}
 
 			if (!restartRequired) {
 				logger.info(
-					{ attempts: WhatsappService.retries.get(sessionId) ?? 1, sessionId },
+					{
+						attempts: WhatsappService.retries.get(sessionId) ?? 1,
+						sessionId,
+					},
 					"Reconnecting...",
 				);
 			}
+
 			setTimeout(
 				() => WhatsappService.createSession(options),
-				restartRequired ? 0 : env.RECONNECT_INTERVAL,
+				restartRequired ? 0 : (env.RECONNECT_INTERVAL || 5000),
 			);
 		};
 
@@ -197,13 +228,16 @@ class WhatsappService {
 				res.writableEnded ||
 				(qr && currentGenerations >= env.SSE_MAX_QR_GENERATION)
 			) {
-				logger.info({
-					res: !!res,
-					writableEnded: res?.writableEnded,
-					qr: !!qr,
-					currentGenerations,
-					maxGenerations: env.SSE_MAX_QR_GENERATION
-				}, "Destroying session in handleSSEConnectionUpdate");
+				logger.info(
+					{
+						res: !!res,
+						writableEnded: res?.writableEnded,
+						qr: !!qr,
+						currentGenerations,
+						maxGenerations: env.SSE_MAX_QR_GENERATION,
+					},
+					"Destroying session in handleSSEConnectionUpdate",
+				);
 				res && !res.writableEnded && res.end();
 				destroy();
 				return;
@@ -217,31 +251,12 @@ class WhatsappService {
 			res.write(`data: ${JSON.stringify(data)}\n\n`);
 		};
 
-		const fetchBaileysVersion = async (retries = 3): Promise<[number, number, number]> => {
-			for (let i = 1; i <= retries; i++) {
-				try {
-					const response = await fetch(
-						"https://raw.githubusercontent.com/WhiskeySockets/Baileys/master/src/Defaults/baileys-version.json"
-					);
-
-					if (response.ok) {
-						const data = (await response.json()) as BaileysVersionResponse;
-						return data.version;
-					}
-					logger.warn(`Fetch failed (attempt ${i}/${retries}), using hardcoded Baileys version.`);
-				} catch (error) {
-					logger.error(error, `Failed to fetch Baileys version (attempt ${i}/${retries})`);
-				}
-			}
-			logger.warn(`All fetch attempts failed, using hardcoded Baileys version.`);
-			return [2, 3000, 1023223821]; // Keep a fallback
-		};
-
-		const versionData = { version: await fetchBaileysVersion() };
+		const versionData = { version: await WhatsappService.fetchBaileysVersion() };
 
 		const handleConnectionUpdate = SSE
 			? handleSSEConnectionUpdate
 			: handleNormalConnectionUpdate;
+
 		const { state, saveCreds } = await useSession(sessionId);
 		const socket = makeWASocket({
 			printQRInTerminal: true,
@@ -261,6 +276,9 @@ class WhatsappService {
 				});
 				return (data?.message || undefined) as proto.IMessage | undefined;
 			},
+			keepAliveIntervalMs: 30000,
+			syncFullHistory: false,
+			shouldSyncHistoryMessage: () => false,
 		});
 
 		const store = new Store(sessionId, socket.ev);
@@ -285,15 +303,37 @@ class WhatsappService {
 				);
 				WhatsappService.retries.delete(sessionId);
 				WhatsappService.SSEQRGenerations.delete(sessionId);
+
+				// Start presence keep-alive
+				if (socket.user) {
+					socket.sendPresenceUpdate("available", socket.user.id).catch((e) => {
+						logger.error(e, "Error sending initial presence update");
+					});
+
+					// Send presence update every 2 minutes
+					const presenceInterval = setInterval(async () => {
+						if (socket.user && socket.ws?.readyState === 1) {
+							try {
+								await socket.sendPresenceUpdate("available", socket.user.id);
+							} catch (e) {
+								logger.error(e, "Error sending keep-alive presence");
+							}
+						}
+					}, 120000);
+
+					WhatsappService.presenceIntervals.set(sessionId, presenceInterval);
+				}
 			}
-			if (
-				connection === "close" &&
-				(lastDisconnect?.error as Boom)?.output?.statusCode ===
-					DisconnectReason.restartRequired
-			)
+
+			if (connection === "close") {
 				handleConnectionClose();
-			if (connection === "connecting")
+				return;
+			}
+
+			if (connection === "connecting") {
 				WhatsappService.updateWaConnection(sessionId, WAStatus.PullingWAData);
+			}
+
 			handleConnectionUpdate();
 		});
 
