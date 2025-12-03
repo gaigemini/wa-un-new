@@ -11,7 +11,6 @@ import { WAStatus } from "@/types/index.js";
 import type { Boom } from "@hapi/boom";
 import type { Response } from "express";
 import { toDataURL } from "qrcode";
-import type { WebSocket as WebSocketType } from "ws";
 import env from "@/config/env.js";
 
 export type Session = WASocket & {
@@ -260,7 +259,7 @@ class WhatsappService {
 		const { state, saveCreds } = await useSession(sessionId);
 		const socket = makeWASocket({
 			printQRInTerminal: true,
-			browser: [env.BOT_NAME || "Ubuntu", "Chrome", "3.0"],
+			browser: ["Ubuntu", "Chrome", "20.0.04"], // Valid browser identification
 			generateHighQualityLinkPreview: true,
 			...socketConfig,
 			auth: {
@@ -276,6 +275,8 @@ class WhatsappService {
 				});
 				return (data?.message || undefined) as proto.IMessage | undefined;
 			},
+			// Use BOT_NAME here instead for display purposes
+			defaultQueryTimeoutMs: 20000,
 			keepAliveIntervalMs: 30000,
 			syncFullHistory: false,
 			shouldSyncHistoryMessage: () => false,
@@ -293,7 +294,7 @@ class WhatsappService {
 		socket.ev.on("creds.update", saveCreds);
 		socket.ev.on("connection.update", (update) => {
 			connectionState = update;
-			const { connection, lastDisconnect } = update;
+			const { connection } = update;
 			logger.info({ update }, "Session status");
 
 			if (connection === "open") {
@@ -312,9 +313,12 @@ class WhatsappService {
 
 					// Send presence update every 2 minutes
 					const presenceInterval = setInterval(async () => {
-						if (socket.user && socket.ws?.readyState === 1) {
+						if (socket.user && socket.ws && typeof (socket.ws as any).readyState !== 'undefined') {
 							try {
-								await socket.sendPresenceUpdate("available", socket.user.id);
+								// Check WebSocket connection state (1 = OPEN)
+								if ((socket.ws as any).readyState === 1) {
+									await socket.sendPresenceUpdate("available", socket.user.id);
+								}
 							} catch (e) {
 								logger.error(e, "Error sending keep-alive presence");
 							}
@@ -360,7 +364,14 @@ class WhatsappService {
 
 	static getSessionStatus(session: Session) {
 		const state = ["CONNECTING", "CONNECTED", "DISCONNECTING", "DISCONNECTED"];
-		let status = state[(session.ws as unknown as WebSocketType).readyState];
+		let status = "DISCONNECTED";
+		
+		// Safely check WebSocket readyState
+		if (session.ws && typeof (session.ws as any).readyState !== 'undefined') {
+			const readyState = (session.ws as any).readyState as number;
+			status = state[readyState] || "DISCONNECTED";
+		}
+		
 		status = session.user ? "AUTHENTICATED" : status;
 		return session.waStatus !== WAStatus.Unknown ? session.waStatus : status.toLowerCase();
 	}

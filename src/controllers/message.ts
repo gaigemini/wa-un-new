@@ -37,15 +37,43 @@ export const list: RequestHandler = async (req, res) => {
 
 export const send: RequestHandler = async (req, res) => {
 	try {
-		const { jid, type = "number", message, options } = req.body;
+		const { jid, type = "number", message, options, quoted } = req.body;
 		const sessionId = req.params.sessionId;
 		const session = WhatsappService.getSession(sessionId)!;
+
+		logger.info(req.body, `Sending message to ${jid}`);
 
 		const validJid = await WhatsappService.validJid(session, jid, type);
 		if (!validJid) return res.status(400).json({ error: "JID does not exists" });
 
+		// Handle quoted message (reply)
+		let finalOptions = options || {};
+		if (quoted) {
+			// Fetch the quoted message from database
+			const quotedMessage = await prisma.message.findFirst({
+				where: {
+					sessionId,
+					remoteJid: quoted.remoteJid || validJid,
+					id: quoted.id,
+				},
+			});
+
+			if (!quotedMessage) {
+				return res.status(400).json({ error: "Quoted message not found" });
+			}
+
+			// Construct the quoted message object
+			finalOptions = {
+				...finalOptions,
+				quoted: {
+					key: quotedMessage.key as proto.IMessageKey,
+					message: quotedMessage.message as proto.IMessage,
+				},
+			};
+		}
+
 		await updatePresence(session, WAPresence.Available, validJid);
-		const result = await session.sendMessage(validJid, message, options);
+		const result = await session.sendMessage(validJid, message, finalOptions);
 		emitEvent("send.message", sessionId, { jid: validJid, result });
 		res.status(200).json(result);
 	} catch (e) {
@@ -65,12 +93,12 @@ export const send: RequestHandler = async (req, res) => {
 export const sendBulk: RequestHandler = async (req, res) => {
 	const { sessionId } = req.params;
 	const session = WhatsappService.getSession(sessionId)!;
-	const results: { index: number; result: proto.WebMessageInfo | undefined }[] = [];
+	const results: { index: number; result: WAMessage | undefined }[] = [];
 	const errors: { index: number; error: string }[] = [];
 
 	for (const [
 		index,
-		{ jid, type = "number", delay = 1000, message, options },
+		{ jid, type = "number", delay = 1000, message, options, quoted },
 	] of req.body.entries()) {
 		try {
 			const exists = await WhatsappService.jidExists(session, jid, type);
@@ -81,8 +109,30 @@ export const sendBulk: RequestHandler = async (req, res) => {
 
 			if (index > 0) await delayMs(delay);
 
+			// Handle quoted message (reply)
+			let finalOptions = options || {};
+			if (quoted) {
+				const quotedMessage = await prisma.message.findFirst({
+					where: {
+						sessionId,
+						remoteJid: quoted.remoteJid || jid,
+						id: quoted.id,
+					},
+				});
+
+				if (quotedMessage) {
+					finalOptions = {
+						...finalOptions,
+						quoted: {
+							key: quotedMessage.key as proto.IMessageKey,
+							message: quotedMessage.message as proto.IMessage,
+						},
+					};
+				}
+			}
+
 			await updatePresence(session, WAPresence.Available, jid);
-			const result = await session.sendMessage(jid, message, options);
+			const result = await session.sendMessage(jid, message, finalOptions);
 			results.push({ index, result });
 			emitEvent("send.message", sessionId, { jid, result });
 		} catch (e) {
@@ -122,26 +172,9 @@ export const download: RequestHandler = async (req, res) => {
 	}
 };
 
-// TODO: Added validation for message objects in the delete message and delete message only me functions.
 export const deleteMessage: RequestHandler = async (req, res) => {
 	try {
 		const { sessionId } = req.params;
-		/**
-		 * @type {string} jid
-		 * @type {string} type
-		 * @type {object} message
-		 *
-		 * @example {
-		 * 	"jid": "120363xxx8@g.us",
-		 * 	"type": "group",
-		 * 	"message": {
-		 * 		"remoteJid": "120363xxx8@g.us",
-		 * 		"fromMe": false,
-		 * 		"id": "3EB0829036xxxxx"
-		 * 	}
-		 * }
-		 * @returns {object} result
-		 */
 		const { jid, type = "number", message } = req.body;
 		const session = WhatsappService.getSession(sessionId)!;
 
@@ -161,22 +194,6 @@ export const deleteMessage: RequestHandler = async (req, res) => {
 export const deleteMessageForMe: RequestHandler = async (req, res) => {
 	try {
 		const { sessionId } = req.params;
-		/**
-		 * @type {string} jid
-		 * @type {string} type
-		 * @type {object} message
-		 *
-		 * @example {
-		 * 	"jid": "120363xxx8@g.us",
-		 * 	"type": "group",
-		 * 	"message": {
-		 * 		"id": "ATWYHDNNWU81732J",
-		 * 		"fromMe": false,
-		 * 		"timestamp": "1654823909"
-		 * 	}
-		 * }
-		 * @returns {object} result
-		 */
 		const { jid, type = "number", message } = req.body;
 		const session = WhatsappService.getSession(sessionId)!;
 
